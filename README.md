@@ -1,16 +1,68 @@
-# React + Vite
+# SamAI Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A real-time manufacturing control panel powered by React + Vite with WebSocket integration to Node-RED and voice control via DeepGram.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Real-time machine status and OEE metrics
+- Voice commands via DeepGram STT/TTS
+- WebSocket-based Node-RED integration
+- Dark/Light theme toggle
+- Responsive dashboard UI
+- Production order management
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Install dependencies
 
-## Expanding the ESLint configuration
+```bash
+npm install
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Environment Configuration
+
+Create a `.env` file in the project root:
+
+```env
+VITE_DEEPGRAM_API_KEY=your_deepgram_api_key_here
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+## Architecture
+
+- `src/app/` — Main app shell and UI logic
+- `src/services/` — WebSocket and DeepGram integrations
+- `src/features/` — Voice capture and pipeline handling
+- `src/components/` — Reusable UI components
+
+## WebSocket Endpoints
+
+- `/ws/machine` — Machine on/off state
+- `/ws/dashboard` — Order and production data
+- `/ws/speak` — Voice input from dashboard to Node-RED
+- `/ws/voice` — Voice output from Node-RED to dashboard
+- `/ws/stop` — Production stop signal
+- `/ws/reset` — Production reset
+- `/ws/placeOrder` — Order placement
+- `/ws/dateTime` — Scheduled production time
+
+## Voice Pipeline
+
+Microphone → Deepgram STT → Node-RED (`/ws/speak`) → Node-RED Processing → Node-RED TTS response (`/ws/voice`) → Deepgram TTS → Audio Playback

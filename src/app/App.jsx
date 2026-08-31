@@ -71,7 +71,6 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/machine', {
-      onopen: () => console.log('Connected to Node-RED websocket machine'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
@@ -79,10 +78,9 @@ function App() {
             setMachineOn(Boolean(payload.value));
           }
         } catch (error) {
-          console.error('Invalid Node-RED message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED machine websocket error:', error),
     });
 
     machineSocketRef.current = socket;
@@ -91,7 +89,6 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/voice', {
-      onopen: () => console.log('Connected to Node-RED voice websocket'),
       onmessage: async (event) => {
         try {
           const payload = JSON.parse(event.data);
@@ -101,10 +98,9 @@ function App() {
             await handleSpeakResponse(payload);
           }
         } catch (error) {
-          console.error('Invalid voice websocket message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED voice websocket error:', error),
     });
 
     speakSocketRef.current = socket;
@@ -113,7 +109,6 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/dashboard', {
-      onopen: () => console.log('Connected to Node-RED dashboard websocket'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
@@ -134,10 +129,9 @@ function App() {
             if (nextMessage.dateTime) setDateTime(nextMessage.dateTime);
           }
         } catch (error) {
-          console.error('Invalid dashboard websocket message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED dashboard websocket error:', error),
     });
 
     dashboardSocketRef.current = socket;
@@ -146,16 +140,14 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/stop', {
-      onopen: () => console.log('Connected to Node-RED websocket stop'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (payload.device === 'stop') setStop(Boolean(payload.value));
         } catch (error) {
-          console.error('Invalid stop websocket message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED stop websocket error:', error),
     });
 
     stopSocketRef.current = socket;
@@ -164,16 +156,14 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/reset', {
-      onopen: () => console.log('Connected to Node-RED websocket reset'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (payload.device === 'reset') setResetState(Boolean(payload.value));
         } catch (error) {
-          console.error('Invalid reset websocket message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED reset websocket error:', error),
     });
 
     resetSocketRef.current = socket;
@@ -182,16 +172,14 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/placeOrder', {
-      onopen: () => console.log('Connected to Node-RED websocket placeOrder'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (payload.device === 'placeOrder') setPlaceOrder(Boolean(payload.value));
         } catch (error) {
-          console.error('Invalid placeOrder websocket message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED placeOrder websocket error:', error),
     });
 
     placeOrderSocketRef.current = socket;
@@ -200,16 +188,14 @@ function App() {
 
   useEffect(() => {
     const socket = getNodeRedSocket('/ws/dateTime', {
-      onopen: () => console.log('Connected to Node-RED websocket dateTime'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (payload.device === 'dateTime') setDateTime(payload.value);
         } catch (error) {
-          console.error('Invalid dateTime websocket message:', event.data);
+          // silent
         }
       },
-      onerror: (error) => console.error('Node-RED dateTime websocket error:', error),
     });
 
     dateTimeSocketRef.current = socket;
@@ -482,7 +468,10 @@ function App() {
               <button
                 type="button"
                 className={micListening ? 'btn btn-success' : 'btn btn-primary'}
-                onClick={() => setMicEnabled((current) => !current)}
+                onClick={() => {
+                  console.log('[App] Speak button clicked. Current enabled:', micEnabled, '-> toggling to:', !micEnabled);
+                  setMicEnabled((current) => !current);
+                }}
               >
                 {micListening ? 'Listening...' : 'Speak'}
               </button>

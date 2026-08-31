@@ -1,5 +1,6 @@
-const NODE_RED_HOST = 'node-dev.iotaiml.dpdns.org';
-const NODE_RED_PROTOCOL = 'wss';
+const NODE_RED_HOSTS = {
+  production: { protocol: 'wss', host: 'node-dev.iotaiml.dpdns.org' },
+};
 
 const socketCache = new Map();
 const reconnectTimers = new Map();
@@ -13,29 +14,34 @@ const RECONNECT = {
   timeout: 8000,
 };
 
-const buildUrl = (path) =>
-  `${NODE_RED_PROTOCOL}://${NODE_RED_HOST}${path.startsWith('/') ? path : `/${path}`}`;
+const buildUrl = (path, host = NODE_RED_HOSTS.production) =>
+  `${host.protocol}://${host.host}${path.startsWith('/') ? path : `/${path}`}`;
 
 export const NODE_RED_WS_URLS = {
-  machine: buildUrl('/ws/machine'),
-  speak: buildUrl('/ws/speak'),
-  voice: buildUrl('/ws/voice'),
-  dashboard: buildUrl('/ws/dashboard'),
-  stop: buildUrl('/ws/stop'),
-  reset: buildUrl('/ws/reset'),
-  placeOrder: buildUrl('/ws/placeOrder'),
-  dateTime: buildUrl('/ws/dateTime'),
+  machine: (host) => buildUrl('/ws/machine', host),
+  speak: (host) => buildUrl('/ws/speak', host),
+  voice: (host) => buildUrl('/ws/voice', host),
+  dashboard: (host) => buildUrl('/ws/dashboard', host),
+  stop: (host) => buildUrl('/ws/stop', host),
+  reset: (host) => buildUrl('/ws/reset', host),
+  placeOrder: (host) => buildUrl('/ws/placeOrder', host),
+  dateTime: (host) => buildUrl('/ws/dateTime', host),
 };
 
 class SocketConnection {
-  constructor(url) {
-    this.url = url;
+  constructor(path) {
+    this.path = path;
     this.socket = null;
     this.handlers = {};
     this.attempts = 0;
     this.delay = RECONNECT.initialDelay;
     this.closedManually = false;
     this.connecting = false;
+    this.currentHost = NODE_RED_HOSTS.production;
+  }
+
+  getUrl() {
+    return buildUrl(this.path, this.currentHost);
   }
 
   setHandlers(handlers) {
@@ -47,7 +53,8 @@ class SocketConnection {
     if (this.socket?.readyState === WebSocket.CONNECTING || this.connecting) return this.socket;
 
     this.connecting = true;
-    this.socket = new WebSocket(this.url);
+    const url = this.getUrl();
+    this.socket = new WebSocket(url);
     this.socket.onopen = () => this.onOpen();
     this.socket.onmessage = (event) => this.onMessage(event);
     this.socket.onerror = () => this.onError();
@@ -57,7 +64,8 @@ class SocketConnection {
   }
 
   setTimeout() {
-    const existing = timeoutIds.get(this.url);
+    const key = `${this.path}-${this.currentHost.host}`;
+    const existing = timeoutIds.get(key);
     if (existing) clearTimeout(existing);
 
     const id = setTimeout(() => {
@@ -66,14 +74,15 @@ class SocketConnection {
       }
     }, RECONNECT.timeout);
 
-    timeoutIds.set(this.url, id);
+    timeoutIds.set(key, id);
   }
 
   clearTimeout() {
-    const id = timeoutIds.get(this.url);
+    const key = `${this.path}-${this.currentHost.host}`;
+    const id = timeoutIds.get(key);
     if (id) {
       clearTimeout(id);
-      timeoutIds.delete(this.url);
+      timeoutIds.delete(key);
     }
   }
 
@@ -91,6 +100,9 @@ class SocketConnection {
   }
 
   onError() {
+    if (this.attempts <= 2) {
+      console.debug(`WebSocket connection failed for ${this.getUrl()}`);
+    }
     this.handlers.onerror?.();
   }
 
@@ -106,7 +118,8 @@ class SocketConnection {
   }
 
   scheduleReconnect() {
-    const existing = reconnectTimers.get(this.url);
+    const hostKey = this.currentHost.host;
+    const existing = reconnectTimers.get(`${this.path}-${hostKey}`);
     if (existing) clearTimeout(existing);
 
     const delay = Math.min(
@@ -119,12 +132,12 @@ class SocketConnection {
       this.connect();
     }, delay);
 
-    reconnectTimers.set(this.url, timerId);
+    reconnectTimers.set(`${this.path}-${hostKey}`, timerId);
     this.delay = delay;
   }
 
   flushPending() {
-    const queue = pendingMessages.get(this.url);
+    const queue = pendingMessages.get(this.path);
     if (!queue) return;
 
     while (queue.length > 0) {
@@ -149,23 +162,23 @@ class SocketConnection {
   }
 
   queue(payload) {
-    if (!pendingMessages.has(this.url)) {
-      pendingMessages.set(this.url, []);
+    if (!pendingMessages.has(this.path)) {
+      pendingMessages.set(this.path, []);
     }
-    pendingMessages.get(this.url).push(payload);
+    pendingMessages.get(this.path).push(payload);
   }
 
   close() {
     this.closedManually = true;
 
-    const timer = reconnectTimers.get(this.url);
+    const timer = reconnectTimers.get(`${this.path}-${this.currentHost.host}`);
     if (timer) {
       clearTimeout(timer);
-      reconnectTimers.delete(this.url);
+      reconnectTimers.delete(`${this.path}-${this.currentHost.host}`);
     }
 
     this.clearTimeout();
-    pendingMessages.delete(this.url);
+    pendingMessages.delete(this.path);
 
     if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
       this.socket.close();
@@ -177,12 +190,11 @@ class SocketConnection {
 }
 
 export function getNodeRedSocket(path, handlers = {}) {
-  const url = buildUrl(path);
-  let connection = socketCache.get(url);
+  let connection = socketCache.get(path);
 
   if (!connection) {
-    connection = new SocketConnection(url);
-    socketCache.set(url, connection);
+    connection = new SocketConnection(path);
+    socketCache.set(path, connection);
   }
 
   connection.setHandlers(handlers);
@@ -190,19 +202,17 @@ export function getNodeRedSocket(path, handlers = {}) {
 }
 
 export function sendNodeRedMessage(path, payload) {
-  const url = buildUrl(path);
-  const connection = socketCache.get(url);
+  const connection = socketCache.get(path);
 
   if (!connection) return false;
   return connection.send(payload);
 }
 
 export function closeNodeRedSocket(path) {
-  const url = buildUrl(path);
-  const connection = socketCache.get(url);
+  const connection = socketCache.get(path);
 
   if (!connection) return;
 
   connection.close();
-  socketCache.delete(url);
+  socketCache.delete(path);
 }
