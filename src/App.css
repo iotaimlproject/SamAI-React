@@ -402,6 +402,32 @@
   font-weight: 600;
 }
 
+.mic-text {
+  transition: opacity 0.22s ease, color 0.22s ease;
+  min-height: 1.2em;
+  display: inline-block;
+}
+
+.mic-text.is-interim {
+  color: var(--text-muted);
+  opacity: 0.85;
+  font-style: italic;
+}
+
+.mic-text.is-final {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.mic-interim-hint {
+  margin-left: 8px;
+  font-size: 11px;
+  color: #ef4444;
+  animation: pulse-red 1s infinite;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 /* ---- Mobile layout ---- */
 @media (max-width: 480px) {
   .page {

@@ -16,7 +16,7 @@ A real-time manufacturing control panel powered by React + Vite with WebSocket i
 ### Install dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### Environment Configuration
@@ -30,19 +30,19 @@ VITE_DEEPGRAM_API_KEY=your_deepgram_api_key_here
 ### Development
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ### Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ### Lint
 
 ```bash
-npm run lint
+pnpm lint
 ```
 
 ## Architecture

@@ -4,7 +4,7 @@ import { Led } from '../components/ui/Led';
 import { Toggle } from '../components/ui/Toggle';
 import { handleSpeakResponse } from '../features/voice/voiceService';
 import { useVoiceCapture } from '../features/voice/useVoiceCapture';
-import { closeNodeRedSocket, getNodeRedSocket, sendNodeRedMessage } from '../services/nodeRedWebSocket';
+import { NODE_RED_WS_PATHS, closeNodeRedSocket, getNodeRedSocket, sendNodeRedMessage } from '../services/nodeRedWebSocket';
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -20,8 +20,8 @@ function App() {
 
   const [machineOn, setMachineOn] = useState(true);
   const [oee, setOee] = useState(0);
-  const [availability, setAvailability] = useState(100);
-  const [performance, setPerformance] = useState(97);
+  const [availability] = useState(100);
+  const [performance] = useState(97);
   const [quality, setQuality] = useState(0);
   const [slNo, setSlNo] = useState(1);
   const [item, setItem] = useState('Solid_Plate');
@@ -32,35 +32,36 @@ function App() {
   const [resetState, setResetState] = useState(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [qtyReq, setQtyReq] = useState(3);
-  const [rmQty, setRmQty] = useState(1);
+  const [rmQty] = useState(1);
   const [produced, setProduced] = useState(0);
-  const [productionOn, setProductionOn] = useState(true);
+  const [productionOn] = useState(true);
   const [plannedAt, setPlannedAt] = useState(new Date());
   const [now, setNow] = useState(new Date());
   const [stop, setStop] = useState(false);
-  const [perPartRs, setPerPartRs] = useState(2000);
-  const [plannedRs, setPlannedRs] = useState(6000);
+  const [perPartRs] = useState(2000);
+  const [plannedRs] = useState(6000);
   const [badParts, setBadParts] = useState(0);
   const [loss, setLoss] = useState(0);
 
   const machineSocketRef = useRef(null);
   const speakSocketRef = useRef(null);
+  const voiceSocketRef = useRef(null);
   const dashboardSocketRef = useRef(null);
   const stopSocketRef = useRef(null);
   const resetSocketRef = useRef(null);
   const placeOrderSocketRef = useRef(null);
   const dateTimeSocketRef = useRef(null);
 
-  const { listening: micListening, text: micInput, setText: setMicInput, stop: stopVoiceCapture } = useVoiceCapture({
+  const { listening: micListening, text: micInput, interim: micInterim, isInterim, setText: setMicInput, stop: stopVoiceCapture } = useVoiceCapture({
     enabled: micEnabled,
     onResult: async (transcript, isFinal) => {
-      if (!isFinal) return;
-      const socket = getNodeRedSocket('/ws/speak');
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ device: 'speak', value: transcript, text: transcript, source: 'dashboard' }));
-      } else {
-        sendNodeRedMessage('/ws/speak', { device: 'speak', value: transcript, text: transcript, source: 'dashboard' });
+      if (!isFinal) {
+        console.log('[App /ws/speak] interim:', transcript);
+        return;
       }
+      const payload = { device: 'speak', value: transcript, text: transcript, source: 'dashboard' };
+      const ok = sendNodeRedMessage(NODE_RED_WS_PATHS.speak, payload);
+      console.log('[App /ws/speak] send', ok ? 'queued/sent' : 'failed', payload);
     },
   });
 
@@ -69,58 +70,68 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // --- INDEPENDENT WS: /ws/machine ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/machine', {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.machine, {
+      onopen: () => console.log('[App] /ws/machine connected'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (payload.device === 'machine') {
+            console.log('[App /ws/machine] recv:', payload);
             setMachineOn(Boolean(payload.value));
           }
-        } catch (error) {
-          // silent
-        }
+        } catch (_e) { void _e; }
       },
     });
-
     machineSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/machine');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.machine);
   }, []);
 
+  // --- INDEPENDENT WS: /ws/speak (dashboard -> Node-RED STT) ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/voice', {
-      onmessage: async (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.device === 'voice' || payload.event === 'tts') {
-            const text = payload.value ?? payload.text ?? '';
-            setMicInput(text);
-            await handleSpeakResponse(payload);
-          }
-        } catch (error) {
-          // silent
-        }
-      },
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.speak, {
+      onopen: () => console.log('[App] /ws/speak connected'),
+      onmessage: (event) => console.log('[App /ws/speak] echo recv:', event.data),
+      onerror: (e) => console.error('[App /ws/speak] error:', e),
+      onclose: () => console.log('[App /ws/speak] closed'),
     });
-
     speakSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/voice');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.speak);
+  }, []);
+
+  // --- INDEPENDENT WS: /ws/voice (Node-RED -> dashboard TTS) ---
+  useEffect(() => {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.voice, {
+      onopen: () => console.log('[App] /ws/voice connected'),
+      onmessage: async (event) => {
+        console.log('[App /ws/voice] raw:', event.data);
+        let payload;
+        try {
+          payload = JSON.parse(event.data);
+        } catch {
+          payload = event.data;
+        }
+        const text = payload?.value ?? payload?.text ?? payload?.payload ?? (typeof payload === 'string' ? payload : '');
+        if (text && typeof text === 'string') setMicInput(text);
+        await handleSpeakResponse(payload);
+      },
+      onerror: (e) => console.error('[App /ws/voice] error:', e),
+      onclose: () => console.log('[App /ws/voice] closed'),
+    });
+    voiceSocketRef.current = socket;
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.voice);
   }, [setMicInput]);
 
+  // --- INDEPENDENT WS: /ws/dashboard (only order data) ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/dashboard', {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.dashboard, {
+      onopen: () => console.log('[App] /ws/dashboard connected'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.device === 'placeOrder' && typeof payload.value === 'boolean') {
-            setPlaceOrder(Boolean(payload.value));
-          }
-          if (payload.device === 'stop' && typeof payload.value === 'boolean') {
-            setStop(Boolean(payload.value));
-          }
-          if (payload.device === 'reset' && payload.value) {
-            setResetState(true);
-          }
+          console.log('[App /ws/dashboard] recv:', payload);
+          // Only handle order – placeOrder/stop/reset are handled by their own WS
           if (payload.device === 'order') {
             const nextMessage = payload.value ?? payload;
             if (typeof nextMessage.slNo === 'number') setSlNo(nextMessage.slNo);
@@ -128,78 +139,83 @@ function App() {
             if (typeof nextMessage.setQty === 'number') setSetQty(nextMessage.setQty);
             if (nextMessage.dateTime) setDateTime(nextMessage.dateTime);
           }
-        } catch (error) {
-          // silent
-        }
+        } catch (_e) { void _e; }
       },
     });
-
     dashboardSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/dashboard');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.dashboard);
   }, []);
 
+  // --- INDEPENDENT WS: /ws/stop ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/stop', {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.stop, {
+      onopen: () => console.log('[App] /ws/stop connected'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.device === 'stop') setStop(Boolean(payload.value));
-        } catch (error) {
-          // silent
-        }
+          if (payload.device === 'stop') {
+            console.log('[App /ws/stop] recv:', payload);
+            setStop(Boolean(payload.value));
+          }
+        } catch (_e) { void _e; }
       },
     });
-
     stopSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/stop');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.stop);
   }, []);
 
+  // --- INDEPENDENT WS: /ws/reset ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/reset', {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.reset, {
+      onopen: () => console.log('[App] /ws/reset connected'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.device === 'reset') setResetState(Boolean(payload.value));
-        } catch (error) {
-          // silent
-        }
+          if (payload.device === 'reset') {
+            console.log('[App /ws/reset] recv:', payload);
+            setResetState(Boolean(payload.value));
+          }
+        } catch (_e) { void _e; }
       },
     });
-
     resetSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/reset');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.reset);
   }, []);
 
+  // --- INDEPENDENT WS: /ws/placeOrder ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/placeOrder', {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.placeOrder, {
+      onopen: () => console.log('[App] /ws/placeOrder connected'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.device === 'placeOrder') setPlaceOrder(Boolean(payload.value));
-        } catch (error) {
-          // silent
-        }
+          if (payload.device === 'placeOrder') {
+            console.log('[App /ws/placeOrder] recv:', payload);
+            setPlaceOrder(Boolean(payload.value));
+          }
+        } catch (_e) { void _e; }
       },
     });
-
     placeOrderSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/placeOrder');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.placeOrder);
   }, []);
 
+  // --- INDEPENDENT WS: /ws/dateTime ---
   useEffect(() => {
-    const socket = getNodeRedSocket('/ws/dateTime', {
+    const socket = getNodeRedSocket(NODE_RED_WS_PATHS.dateTime, {
+      onopen: () => console.log('[App] /ws/dateTime connected'),
       onmessage: (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.device === 'dateTime') setDateTime(payload.value);
-        } catch (error) {
-          // silent
-        }
+          if (payload.device === 'dateTime') {
+            console.log('[App /ws/dateTime] recv:', payload);
+            setDateTime(payload.value);
+          }
+        } catch (_e) { void _e; }
       },
     });
-
     dateTimeSocketRef.current = socket;
-    return () => closeNodeRedSocket('/ws/dateTime');
+    return () => closeNodeRedSocket(NODE_RED_WS_PATHS.dateTime);
   }, []);
 
   useEffect(() => {
@@ -212,30 +228,12 @@ function App() {
     return () => clearInterval(id);
   }, [machineOn, availability, performance, quality, qtyReq]);
 
-  const sendDashboardPayload = (device, value, extraPayload = {}) => {
-    const socket = dashboardSocketRef.current ?? getNodeRedSocket('/ws/dashboard');
-    dashboardSocketRef.current = socket;
-    const payload = { device, value, ...extraPayload };
-
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(payload));
-      return;
-    }
-
-    sendNodeRedMessage('/ws/dashboard', payload);
-  };
-
-  const sendStopPayload = (value, extraPayload = {}) => {
-    const socket = stopSocketRef.current ?? getNodeRedSocket('/ws/stop');
-    stopSocketRef.current = socket;
-    const payload = { device: 'stop', value, ...extraPayload };
-
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify(payload));
-      return;
-    }
-
-    sendNodeRedMessage('/ws/stop', payload);
+  // Only used for order submission – not for mirroring other WS
+  const sendDashboardOrder = (extraPayload) => {
+    const payload = { device: 'order', value: extraPayload };
+    const ok = sendNodeRedMessage(NODE_RED_WS_PATHS.dashboard, payload);
+    console.log('[App /ws/dashboard] send order', ok ? 'queued/sent' : 'failed', payload);
+    return ok;
   };
 
   const handleSubmit = () => {
@@ -243,12 +241,11 @@ function App() {
     setPlannedAt(nextPlannedAt);
     setQtyReq(setQty);
 
-    const socket = dateTimeSocketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ device: 'dateTime', value: dateTime }));
-    }
+    const dtPayload = { device: 'dateTime', value: dateTime };
+    const okDt = sendNodeRedMessage(NODE_RED_WS_PATHS.dateTime, dtPayload);
+    console.log('[App /ws/dateTime] send', okDt ? 'queued/sent' : 'failed', dtPayload);
 
-    sendDashboardPayload('order', {
+    sendDashboardOrder({
       slNo,
       item,
       setQty,
@@ -263,24 +260,11 @@ function App() {
     setLoss(0);
     setStop(false);
     setOrderStatus('Order Placed');
-
-    const socket = resetSocketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ device: 'reset', value: true }));
-    }
-
     setResetState(false);
 
-    sendDashboardPayload('reset', true, {
-      slNo,
-      item,
-      setQty,
-      dateTime,
-      produced: 0,
-      badParts: 0,
-      loss: 0,
-      stop: false,
-    });
+    const payload = { device: 'reset', value: true };
+    const ok = sendNodeRedMessage(NODE_RED_WS_PATHS.reset, payload);
+    console.log('[App /ws/reset] send', ok ? 'queued/sent' : 'failed', payload);
   };
 
   const elapsedLabel = now.toLocaleTimeString('en-GB', { hour12: false });
@@ -317,10 +301,8 @@ function App() {
               on={machineOn}
               onChange={(newValue) => {
                 setMachineOn(newValue);
-                const socket = machineSocketRef.current;
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({ device: 'machine', value: newValue }));
-                }
+                const ok = sendNodeRedMessage(NODE_RED_WS_PATHS.machine, { device: 'machine', value: newValue });
+                console.log('[App /ws/machine] send', ok ? 'queued/sent' : 'failed', newValue);
               }}
             />
           </div>
@@ -348,7 +330,7 @@ function App() {
                 onChange={(e) => {
                   const nextSlNo = Number(e.target.value) || 1;
                   setSlNo(nextSlNo);
-                  sendDashboardPayload('slNo', nextSlNo, { item, setQty, dateTime });
+                  // independent: local only, sent on Submit via /ws/dashboard
                 }}
               />
             </div>
@@ -360,7 +342,6 @@ function App() {
                 onChange={(e) => {
                   const nextItem = e.target.value;
                   setItem(nextItem);
-                  sendDashboardPayload('item', nextItem, { slNo, setQty, dateTime });
                 }}
               >
                 <option value="Solid_Plate">1 · Solid_Plate</option>
@@ -378,7 +359,6 @@ function App() {
                 onChange={(e) => {
                   const nextQty = Number(e.target.value) || 0;
                   setSetQty(nextQty);
-                  sendDashboardPayload('quantity', nextQty, { slNo, item, dateTime });
                 }}
               />
             </div>
@@ -394,7 +374,6 @@ function App() {
                 onChange={(e) => {
                   const nextDateTime = e.target.value;
                   setDateTime(nextDateTime);
-                  sendDashboardPayload('dateTime', nextDateTime, { slNo, item, setQty });
                 }}
               />
               <button className="btn btn-primary" onClick={handleSubmit}>Submit</button>
@@ -410,11 +389,8 @@ function App() {
               onChange={(newValue) => {
                 setPlaceOrder(newValue);
                 setOrderStatus(newValue ? 'Order Placed' : 'Order Cancelled');
-                const socket = placeOrderSocketRef.current;
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({ device: 'placeOrder', value: newValue }));
-                }
-                sendDashboardPayload('placeOrder', newValue, { status: newValue ? 'Order Placed' : 'Not Placed', slNo, item, setQty, dateTime });
+                const ok = sendNodeRedMessage(NODE_RED_WS_PATHS.placeOrder, { device: 'placeOrder', value: newValue });
+                console.log('[App /ws/placeOrder] send', ok ? 'queued/sent' : 'failed', newValue);
               }}
             />
           </div>
@@ -436,12 +412,8 @@ function App() {
               on={stop}
               onChange={(newValue) => {
                 setStop(newValue);
-                const socket = stopSocketRef.current;
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({ device: 'stop', value: newValue }));
-                }
-                sendStopPayload(newValue, { slNo, item, setQty, dateTime });
-                sendDashboardPayload('stop', newValue, { slNo, item, setQty, dateTime });
+                const ok = sendNodeRedMessage(NODE_RED_WS_PATHS.stop, { device: 'stop', value: newValue });
+                console.log('[App /ws/stop] send', ok ? 'queued/sent' : 'failed', newValue);
               }}
             />
           </div>
@@ -480,6 +452,20 @@ function App() {
             {micEnabled && (
               <button type="button" className="btn btn-danger" onClick={stopVoiceCapture}>Stop Voice</button>
             )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ fontSize: 12, padding: '8px 10px' }}
+              onClick={async () => {
+                const t = 'Hi, How are you?';
+                setMicInput(t);
+                console.log('[App] Test TTS:', t);
+                await handleSpeakResponse({ device: 'voice', value: t, text: t, source: 'node-red' });
+              }}
+              title="Test /ws/voice TTS without Node-RED"
+            >
+              Test Voice
+            </button>
           </div>
           <div className="debug-output">
             <div className="debug-line">Machine: <span className="debug-value">{machineOn.toString()}</span></div>
@@ -489,7 +475,7 @@ function App() {
             <div className="debug-line">Reset: <span className="debug-value">{resetState.toString()}</span></div>
             <div className="debug-line">Set Qty: <span className="debug-value">{setQty}</span></div>
             <div className="debug-line">SlNo. / Item: <span className="debug-value">{debugSlNoItem}</span></div>
-            <div className="debug-line">Mic Input: <span className="debug-value">{micInput || 'No input yet'}</span></div>
+            <div className="debug-line">Mic Input: <span className={`debug-value mic-text ${isInterim ? 'is-interim' : 'is-final'}`}>{micInput ? (isInterim ? `${micInput}` : micInput) : 'No input yet'}</span>{isInterim && micInterim && <span className="mic-interim-hint">● listening</span>}</div>
           </div>
         </div>
       </div>

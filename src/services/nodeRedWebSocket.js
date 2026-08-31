@@ -7,25 +7,38 @@ const reconnectTimers = new Map();
 const timeoutIds = new Map();
 const pendingMessages = new Map();
 
-const RECONNECT = {
+export const RECONNECT = {
   initialDelay: 1000,
   maxDelay: 30000,
   multiplier: 1.5,
   timeout: 8000,
 };
 
+const MAX_PENDING_QUEUE = 50;
+
 const buildUrl = (path, host = NODE_RED_HOSTS.production) =>
   `${host.protocol}://${host.host}${path.startsWith('/') ? path : `/${path}`}`;
 
+export const NODE_RED_WS_PATHS = {
+  machine: '/ws/machine',
+  speak: '/ws/speak',
+  voice: '/ws/voice',
+  dashboard: '/ws/dashboard',
+  stop: '/ws/stop',
+  reset: '/ws/reset',
+  placeOrder: '/ws/placeOrder',
+  dateTime: '/ws/dateTime',
+};
+
 export const NODE_RED_WS_URLS = {
-  machine: (host) => buildUrl('/ws/machine', host),
-  speak: (host) => buildUrl('/ws/speak', host),
-  voice: (host) => buildUrl('/ws/voice', host),
-  dashboard: (host) => buildUrl('/ws/dashboard', host),
-  stop: (host) => buildUrl('/ws/stop', host),
-  reset: (host) => buildUrl('/ws/reset', host),
-  placeOrder: (host) => buildUrl('/ws/placeOrder', host),
-  dateTime: (host) => buildUrl('/ws/dateTime', host),
+  machine: (host) => buildUrl(NODE_RED_WS_PATHS.machine, host),
+  speak: (host) => buildUrl(NODE_RED_WS_PATHS.speak, host),
+  voice: (host) => buildUrl(NODE_RED_WS_PATHS.voice, host),
+  dashboard: (host) => buildUrl(NODE_RED_WS_PATHS.dashboard, host),
+  stop: (host) => buildUrl(NODE_RED_WS_PATHS.stop, host),
+  reset: (host) => buildUrl(NODE_RED_WS_PATHS.reset, host),
+  placeOrder: (host) => buildUrl(NODE_RED_WS_PATHS.placeOrder, host),
+  dateTime: (host) => buildUrl(NODE_RED_WS_PATHS.dateTime, host),
 };
 
 class SocketConnection {
@@ -34,7 +47,6 @@ class SocketConnection {
     this.socket = null;
     this.handlers = {};
     this.attempts = 0;
-    this.delay = RECONNECT.initialDelay;
     this.closedManually = false;
     this.connecting = false;
     this.currentHost = NODE_RED_HOSTS.production;
@@ -52,6 +64,7 @@ class SocketConnection {
     if (this.socket?.readyState === WebSocket.OPEN) return this.socket;
     if (this.socket?.readyState === WebSocket.CONNECTING || this.connecting) return this.socket;
 
+    this.closedManually = false;
     this.connecting = true;
     const url = this.getUrl();
     this.socket = new WebSocket(url);
@@ -59,25 +72,30 @@ class SocketConnection {
     this.socket.onmessage = (event) => this.onMessage(event);
     this.socket.onerror = () => this.onError();
     this.socket.onclose = () => this.onClose();
-    this.setTimeout();
+    this.setConnectTimeout();
     return this.socket;
   }
 
-  setTimeout() {
+  setConnectTimeout() {
     const key = `${this.path}-${this.currentHost.host}`;
     const existing = timeoutIds.get(key);
     if (existing) clearTimeout(existing);
 
     const id = setTimeout(() => {
-      if (this.socket?.readyState === WebSocket.CONNECTING) {
-        this.socket.close();
+      const s = this.socket;
+      if (s?.readyState === WebSocket.CONNECTING) {
+        s.onopen = null;
+        s.onclose = null;
+        s.onerror = null;
+        s.onmessage = null;
+        try { s.close(); } catch (_e) { void _e; }
       }
     }, RECONNECT.timeout);
 
     timeoutIds.set(key, id);
   }
 
-  clearTimeout() {
+  clearConnectTimeout() {
     const key = `${this.path}-${this.currentHost.host}`;
     const id = timeoutIds.get(key);
     if (id) {
@@ -88,8 +106,7 @@ class SocketConnection {
 
   onOpen() {
     this.connecting = false;
-    this.clearTimeout();
-    this.delay = RECONNECT.initialDelay;
+    this.clearConnectTimeout();
     this.attempts = 0;
     this.flushPending();
     this.handlers.onopen?.();
@@ -108,7 +125,7 @@ class SocketConnection {
 
   onClose() {
     this.connecting = false;
-    this.clearTimeout();
+    this.clearConnectTimeout();
 
     if (!this.closedManually) {
       this.scheduleReconnect();
@@ -119,11 +136,12 @@ class SocketConnection {
 
   scheduleReconnect() {
     const hostKey = this.currentHost.host;
-    const existing = reconnectTimers.get(`${this.path}-${hostKey}`);
+    const key = `${this.path}-${hostKey}`;
+    const existing = reconnectTimers.get(key);
     if (existing) clearTimeout(existing);
 
     const delay = Math.min(
-      this.delay * Math.pow(RECONNECT.multiplier, this.attempts),
+      RECONNECT.initialDelay * Math.pow(RECONNECT.multiplier, this.attempts),
       RECONNECT.maxDelay
     );
 
@@ -132,18 +150,24 @@ class SocketConnection {
       this.connect();
     }, delay);
 
-    reconnectTimers.set(`${this.path}-${hostKey}`, timerId);
-    this.delay = delay;
+    reconnectTimers.set(key, timerId);
   }
 
   flushPending() {
     const queue = pendingMessages.get(this.path);
-    if (!queue) return;
+    if (!queue || queue.length === 0) return;
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
 
     while (queue.length > 0) {
       const payload = queue.shift();
-      this.send(payload);
+      try {
+        this.socket.send(JSON.stringify(payload));
+      } catch {
+        this.queue(payload);
+        break;
+      }
     }
+    if (queue.length === 0) pendingMessages.delete(this.path);
   }
 
   send(payload) {
@@ -165,27 +189,41 @@ class SocketConnection {
     if (!pendingMessages.has(this.path)) {
       pendingMessages.set(this.path, []);
     }
-    pendingMessages.get(this.path).push(payload);
+    const queue = pendingMessages.get(this.path);
+    if (queue.length >= MAX_PENDING_QUEUE) {
+      queue.shift();
+    }
+    queue.push(payload);
   }
 
   close() {
     this.closedManually = true;
 
-    const timer = reconnectTimers.get(`${this.path}-${this.currentHost.host}`);
+    const key = `${this.path}-${this.currentHost.host}`;
+    const timer = reconnectTimers.get(key);
     if (timer) {
       clearTimeout(timer);
-      reconnectTimers.delete(`${this.path}-${this.currentHost.host}`);
+      reconnectTimers.delete(key);
     }
 
-    this.clearTimeout();
+    this.clearConnectTimeout();
     pendingMessages.delete(this.path);
 
-    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
-      this.socket.close();
+    const s = this.socket;
+    if (s) {
+      if (s.readyState === WebSocket.OPEN) {
+        try { s.close(); } catch (_e) { void _e; }
+      } else if (s.readyState === WebSocket.CONNECTING) {
+        s.onopen = null;
+        s.onclose = null;
+        s.onerror = null;
+        s.onmessage = null;
+      }
     }
 
     this.socket = null;
     this.connecting = false;
+    this.attempts = 0;
   }
 }
 

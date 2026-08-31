@@ -2,19 +2,28 @@ const DEFAULT_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY || '';
 
 export const DEEPGRAM = {
   sttUrl: 'wss://api.deepgram.com/v1/listen',
-  ttsUrl: 'https://api.deepgram.com/v2/speak',
+  ttsUrl: 'https://api.deepgram.com/v1/speak',
+  ttsUrlV2: 'https://api.deepgram.com/v2/speak',
 };
+
+const isDev = import.meta.env.DEV;
+const log = (...a) => { if (isDev) console.log(...a); };
 
 export function makeSttUrl(options = {}) {
   const params = new URLSearchParams({
-    endpointing: 'false',
-    language: 'en',
     model: 'nova-3',
+    language: 'en-IN',
     encoding: 'linear16',
     sample_rate: '16000',
+    channels: '1',
+    interim_results: 'true',
+    punctuate: 'true',
+    smart_format: 'true',
+    endpointing: '300',
+    utterance_end_ms: '1000',
+    vad_events: 'true',
     ...options,
   });
-
   return `${DEEPGRAM.sttUrl}?${params.toString()}`;
 }
 
@@ -26,101 +35,118 @@ export function createSttSocket({
   onError,
   options = {},
 } = {}) {
-  if (!apiKey) {
-    const err = new Error('Deepgram API key is missing. Set VITE_DEEPGRAM_API_KEY in the environment.');
-    console.error('[createSttSocket] ERROR:', err.message);
+  if (!apiKey || !apiKey.trim()) {
+    const err = new Error('Deepgram API key missing. Set VITE_DEEPGRAM_API_KEY in .env and restart vite (pnpm dev).');
+    console.error('[Deepgram]', err.message);
     throw err;
+  }
+  if (apiKey.length < 20) {
+    console.warn('[Deepgram] API key looks too short – check VITE_DEEPGRAM_API_KEY');
+  }
+  const isJwt = apiKey.split('.').length === 3;
+  if (isJwt) {
+    console.warn('[Deepgram] JWT detected (from /v1/auth/grant). Browser WebSocket cannot send JWT via Sec-WebSocket-Protocol token header (length limit ~80). Use a 40-char Project API Key or pass JWT via ?access_token query param. See https://developers.deepgram.com/docs/token-based-authentication');
   }
 
   const url = makeSttUrl(options);
-  console.log('[createSttSocket] Creating WebSocket to:', url);
+  log('[Deepgram STT] Connecting to:', url.replace(apiKey, '***'));
 
   const socket = new WebSocket(url, ['token', apiKey]);
   socket.binaryType = 'arraybuffer';
 
-  socket.onopen = () => {
-    console.log('[Deepgram STT] Socket opened!');
-    onOpen?.();
-  };
+  socket.onopen = () => { log('[Deepgram STT] Socket opened!'); onOpen?.(); };
 
   socket.onmessage = (event) => {
     const message = typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data);
-
     try {
       const payload = JSON.parse(message);
-      const transcript = payload.channel?.alternatives?.[0]?.transcript ?? '';
-      const isFinal = Boolean(payload.is_final);
-
-      if (transcript) {
-        console.log('[Deepgram STT] Transcript:', transcript, 'final:', isFinal);
-        onTranscript?.({ transcript, isFinal, payload });
+      if (payload.type === 'Results') {
+        const alt = payload.channel?.alternatives?.[0];
+        const transcript = alt?.transcript ?? '';
+        const isFinal = Boolean(payload.is_final);
+        const speechFinal = Boolean(payload.speech_final);
+        if (transcript) onTranscript?.({ transcript, isFinal, speechFinal, payload });
+      } else if (payload.type === 'Metadata') {
+        log('[Deepgram] Metadata:', payload);
       }
-    } catch (e) {
-      console.error('[Deepgram STT] Parse error:', e, 'data:', message);
-      onError?.(e);
-    }
+    } catch (e) { onError?.(e); }
   };
 
   socket.onerror = (event) => {
-    console.error('[Deepgram STT] Socket error:', event);
+    console.error('[Deepgram STT] Socket error (likely 401 auth or invalid params). Check VITE_DEEPGRAM_API_KEY and that it is a 40-char Project Key, not a JWT. Verify network allows wss://api.deepgram.com. Event:', event);
     onError?.(event);
   };
 
-  socket.onclose = () => {
-    console.log('[Deepgram STT] Socket closed');
-    onClose?.();
+  socket.onclose = (event) => {
+    log(`[Deepgram STT] Socket closed code=${event.code} reason="${event.reason}" wasClean=${event.wasClean}`);
+    if (event.code === 1006) {
+      console.error('[Deepgram] Abnormal closure 1006: usually 401 invalid API key, invalid query params (vad_turnoff, keep_alive as param, etc), or firewall/proxy blocking wss. Try minimal URL: wss://api.deepgram.com/v1/listen?model=nova-3&language=en-IN&encoding=linear16&sample_rate=16000&interim_results=true');
+    }
+    if (event.code === 1008) {
+      console.error('[Deepgram] Policy violation 1008: rate limit or payload too large');
+    }
+    onClose?.(event);
   };
 
   return socket;
 }
 
-async function createAudioWorklet(audioContext, socket) {
-  console.log('[createAudioWorklet] Creating worklet...');
-  
+let cachedWorkletUrl = null;
+const workletModulePromises = new WeakMap();
+
+function getWorkletUrl() {
+  if (cachedWorkletUrl) return cachedWorkletUrl;
   const workletCode = `
     class PCMProcessor extends AudioWorkletProcessor {
+      constructor() { super(); this._buffer = new Int16Array(4096); this._pos = 0; }
       process(inputs) {
         const input = inputs[0]?.[0];
         if (!input) return true;
-
-        const pcm = new Int16Array(input.length);
         for (let i = 0; i < input.length; i++) {
-          pcm[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
+          let pcm = input[i] * 0x7fff;
+          pcm = pcm < -0x7fff ? -0x7fff : pcm > 0x7fff ? 0x7fff : pcm | 0;
+          this._buffer[this._pos++] = pcm;
+          if (this._pos >= this._buffer.length) {
+            const out = this._buffer.buffer.slice(0);
+            this.port.postMessage({ pcm: out }, [out]);
+            this._buffer = new Int16Array(4096);
+            this._pos = 0;
+          }
         }
-
-        this.port.postMessage({ pcm: pcm.buffer }, [pcm.buffer]);
         return true;
       }
     }
     registerProcessor('pcm-processor', PCMProcessor);
   `;
-
   const blob = new Blob([workletCode], { type: 'application/javascript' });
-  const workletUrl = URL.createObjectURL(blob);
+  cachedWorkletUrl = URL.createObjectURL(blob);
+  return cachedWorkletUrl;
+}
 
-  try {
-    console.log('[createAudioWorklet] Adding module...');
-    await audioContext.audioWorklet.addModule(workletUrl);
-    console.log('[createAudioWorklet] Module added, creating node...');
-    
-    const processor = new AudioWorkletNode(audioContext, 'pcm-processor');
-    console.log('[createAudioWorklet] Node created successfully');
-
-    processor.port.onmessage = (event) => {
-      if (socket.readyState !== WebSocket.OPEN) {
-        console.warn('[PCMProcessor] Socket not open, dropping audio data');
-        return;
-      }
-      socket.send(event.data.pcm);
-    };
-
-    return processor;
-  } catch (err) {
-    console.error('[createAudioWorklet] CRITICAL ERROR:', err, err.stack);
-    throw err;
-  } finally {
-    URL.revokeObjectURL(workletUrl);
+async function createAudioWorklet(audioContext, socket) {
+  const workletUrl = getWorkletUrl();
+  let promise = workletModulePromises.get(audioContext);
+  if (!promise) {
+    promise = audioContext.audioWorklet.addModule(workletUrl);
+    workletModulePromises.set(audioContext, promise);
   }
+  try { await promise; } catch (err) { workletModulePromises.delete(audioContext); throw err; }
+  const processor = new AudioWorkletNode(audioContext, 'pcm-processor');
+  const pendingQueue = [];
+  let socketOpen = socket.readyState === WebSocket.OPEN;
+  const flushQueue = () => { while (pendingQueue.length > 0 && socket.readyState === WebSocket.OPEN) socket.send(pendingQueue.shift()); };
+  socket.addEventListener('open', () => { socketOpen = true; flushQueue(); });
+  socket.addEventListener('close', () => { socketOpen = false; });
+  processor.port.onmessage = (event) => {
+    const pcm = event.data.pcm;
+    if (socket.readyState === WebSocket.OPEN) {
+      if (pendingQueue.length) flushQueue();
+      try { socket.send(pcm); } catch (_e) { void _e; }
+    } else if (!socketOpen) {
+      if (pendingQueue.length < 32) pendingQueue.push(pcm);
+    }
+  };
+  return processor;
 }
 
 export async function startMicrophoneStt({
@@ -131,160 +157,150 @@ export async function startMicrophoneStt({
   onError,
   options = {},
 } = {}) {
-  console.log('[startMicrophoneStt] Starting initialization...');
-
   if (!apiKey) {
     const err = new Error('Deepgram API key missing. Set VITE_DEEPGRAM_API_KEY.');
-    console.error('[startMicrophoneStt]', err.message);
-    onError?.(err);
-    throw err;
+    onError?.(err); throw err;
   }
-
   if (!navigator.mediaDevices?.getUserMedia) {
     const err = new Error('Microphone access not supported.');
-    console.error('[startMicrophoneStt]', err.message);
-    onError?.(err);
-    throw err;
+    onError?.(err); throw err;
   }
 
-  let stream, audioContext, source, processor;
+  let stream, audioContext, source, processor, silentGain;
 
   try {
-    console.log('[startMicrophoneStt] Requesting microphone access...');
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 16000,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-    console.log('[startMicrophoneStt] Microphone access granted');
+    const socket = createSttSocket({ apiKey, onTranscript, onOpen, onClose, onError, options });
 
-    console.log('[startMicrophoneStt] Creating STT socket...');
-    const socket = createSttSocket({
-      apiKey,
-      onTranscript,
-      onOpen,
-      onClose,
-      onError,
-      options,
+    const streamPromise = navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-    console.log('[startMicrophoneStt] STT socket created');
 
-    console.log('[startMicrophoneStt] Creating audio context...');
-    audioContext = new AudioContext({ sampleRate: 16000 });
+    const audioContextPromise = (async () => {
+      const ctx = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
+      if (ctx.state === 'suspended') await ctx.resume();
+      return ctx;
+    })();
+
+    stream = await streamPromise;
+    audioContext = await audioContextPromise;
+
     source = audioContext.createMediaStreamSource(stream);
-    console.log('[startMicrophoneStt] Audio context created');
-
-    console.log('[startMicrophoneStt] Creating audio worklet...');
     processor = await createAudioWorklet(audioContext, socket);
-    console.log('[startMicrophoneStt] Audio worklet created');
 
-    console.log('[startMicrophoneStt] Connecting audio nodes...');
+    silentGain = audioContext.createGain();
+    silentGain.gain.value = 0;
     source.connect(processor);
-    processor.connect(audioContext.destination);
-    console.log('[startMicrophoneStt] Audio nodes connected - READY!');
+    processor.connect(silentGain);
+    silentGain.connect(audioContext.destination);
+
+    const keepAlive = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        try { socket.send(JSON.stringify({ type: 'KeepAlive' })); } catch (_e) { void _e; }
+      }
+    }, 5000);
 
     return {
-      stream,
-      socket,
+      stream, socket,
       stop() {
-        console.log('[STT.stop] Stopping...');
+        clearInterval(keepAlive);
         try {
-          processor?.disconnect();
-          source?.disconnect();
-          stream?.getTracks().forEach((track) => track.stop());
-
+          if (socket.readyState === WebSocket.OPEN) {
+            try { socket.send(JSON.stringify({ type: 'CloseStream' })); } catch (_e) { void _e; }
+          }
+          processor?.disconnect(); source?.disconnect(); silentGain?.disconnect();
+          stream?.getTracks().forEach((t) => t.stop());
           if (socket?.readyState === WebSocket.OPEN) {
-            socket.close();
+            try { socket.close(); } catch (_e) { void _e; }
+          } else if (socket?.readyState === WebSocket.CONNECTING) {
+            socket.onopen = null; socket.onclose = null; socket.onerror = null; socket.onmessage = null;
           }
-
-          if (audioContext?.state !== 'closed') {
-            audioContext.close();
-          }
-          console.log('[STT.stop] Stopped successfully');
-        } catch (e) {
-          console.error('[STT.stop] Error:', e);
-        }
+          if (audioContext?.state !== 'closed') audioContext.close();
+        } catch (_e) { void _e; }
       },
     };
   } catch (err) {
-    console.error('[startMicrophoneStt] CRITICAL FAILURE:', err, err.stack);
-    stream?.getTracks().forEach((track) => track.stop());
-    audioContext?.close?.();
-    onError?.(err);
-    throw err;
+    try { stream?.getTracks().forEach((t) => t.stop()); } catch (_e) { void _e; }
+    try { audioContext?.close?.(); } catch (_e2) { void _e2; }
+    onError?.(err); throw err;
   }
 }
 
 export async function speakText({
   text,
   apiKey = DEFAULT_API_KEY,
-  model = 'flux-priya-en',
+  model = 'aura-asteria-en',
   speed = 1,
   expressivity = 0,
 } = {}) {
-  if (!apiKey) {
-    throw new Error('Deepgram API key is missing. Set VITE_DEEPGRAM_API_KEY in the environment.');
-  }
-
-  const response = await fetch(`${DEEPGRAM.ttsUrl}?model=${model}&speed=${speed}&expressivity=${expressivity}`, {
+  if (!apiKey) throw new Error('Deepgram API key is missing. Set VITE_DEEPGRAM_API_KEY in the environment.');
+  const isFlux = model.startsWith('flux-');
+  const baseUrl = isFlux ? DEEPGRAM.ttsUrlV2 : DEEPGRAM.ttsUrl;
+  const query = isFlux
+    ? `?model=${model}&speed=${speed}&expressivity=${expressivity}`
+    : `?model=${model}`;
+  const response = await fetch(`${baseUrl}${query}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Token ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Deepgram TTS failed: ${errorText}`);
-  }
-
+  if (!response.ok) throw new Error(`Deepgram TTS failed: ${await response.text()}`);
   return response.blob();
 }
 
 export function playAudioBlob(blob) {
   const audioUrl = URL.createObjectURL(blob);
   const audio = new Audio(audioUrl);
-  audio.play();
+  audio.onended = () => URL.revokeObjectURL(audioUrl);
+  audio.onerror = () => URL.revokeObjectURL(audioUrl);
+  const p = audio.play();
+  if (p && typeof p.catch === 'function') {
+    p.catch((err) => {
+      console.warn('[TTS] Audio autoplay blocked, unlocking via user gesture:', err?.message);
+      URL.revokeObjectURL(audioUrl);
+      throw err;
+    });
+  }
   return audio;
 }
 
 export async function speakNodeRedText({
   text,
   apiKey = DEFAULT_API_KEY,
-  model = 'flux-priya-en',
+  model = 'aura-asteria-en',
   speed = 1,
   expressivity = 0,
 } = {}) {
   if (!text) return null;
-
+  const needsFallback = !apiKey;
+  if (needsFallback) {
+    console.log('[TTS] No Deepgram key, using browser speechSynthesis');
+    return browserSpeakFallback(text);
+  }
   try {
     const blob = await speakText({ text, apiKey, model, speed, expressivity });
-    const audio = playAudioBlob(blob);
-    audio.onerror = () => {
-      console.warn('Audio playback failed, trying browser fallback');
-      useBrowserFallback(text);
-    };
-    return audio;
-  } catch (error) {
-    console.warn('Deepgram TTS failed, using browser fallback:', error);
-    return useBrowserFallback(text);
+    try {
+      const audio = playAudioBlob(blob);
+      return audio;
+    } catch (playErr) {
+      console.warn('[TTS] play() blocked, fallback to speechSynthesis:', playErr);
+      return browserSpeakFallback(text);
+    }
+  } catch (err) {
+    console.warn('[TTS] Deepgram failed, fallback to browser:', err?.message);
+    return browserSpeakFallback(text);
   }
 }
 
-function useBrowserFallback(text) {
+function browserSpeakFallback(text) {
   if (!('speechSynthesis' in window)) {
-    console.error('Speech synthesis not supported');
+    console.error('[TTS] speechSynthesis not supported and Deepgram failed');
     return null;
   }
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
-  window.speechSynthesis.speak(utterance);
-  return utterance;
+  try { window.speechSynthesis.cancel(); } catch (_e) { void _e; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1; u.pitch = 1; u.volume = 1;
+  u.onstart = () => console.log('[TTS] browser fallback started:', text.slice(0, 40));
+  u.onerror = (e) => console.error('[TTS] browser fallback error:', e);
+  window.speechSynthesis.speak(u);
+  return u;
 }
