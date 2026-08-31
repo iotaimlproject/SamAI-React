@@ -1,0 +1,549 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+.card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(16, 20, 30, 0.04);
+}
+
+/* Compact rows — the whole point is fitting more on screen without
+   scrolling, so this padding is intentionally tight */
+.section {
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-row {
+  flex-wrap: wrap;
+  row-gap: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 92%, var(--accent-soft));
+}
+
+.app-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+}
+
+.theme-toggle:active {
+  transform: translateY(1px);
+}
+
+.theme-toggle-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.big-stat {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+/* ---- Toggle switch ---- */
+.switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: none;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.switch[data-on='true'] {
+  background: var(--accent);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.switch[data-on='true']::after {
+  transform: translateX(20px);
+}
+
+/* ---- Machine row: toggle + On/Off LED + Production LED together ---- */
+.machine-row {
+  margin-top: 2px;
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+
+/* ---- Metrics grid (Availability / Performance / Quality etc.) ---- */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  text-align: left;
+}
+
+.cost-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  text-align: left;
+}
+
+.metrics-row-spread {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.metrics-row-spread > div {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.metrics-row-spread > div:first-child {
+  text-align: left;
+}
+
+.metrics-row-spread > div:last-child {
+  text-align: right;
+}
+
+.metric-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* ---- Form controls ---- */
+.field-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.select,
+.input,
+.datetime {
+  width: 100%;
+  border: none;
+  border-bottom: 2px solid var(--accent);
+  background: transparent;
+  font-family: var(--font-sans);
+  /* 16px minimum keeps iOS Safari from auto-zooming in on focus */
+  font-size: 16px;
+  padding: 6px 2px;
+  color: var(--text);
+}
+
+.select:focus,
+.input:focus,
+.datetime:focus {
+  outline: none;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.05s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-success {
+  background: var(--success);
+  color: #fff;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Status LEDs (compact, live next to the Machine toggle) ----
+   Green when the thing they represent is true, red when false.
+   The On/Off LED reads machineOn directly; the Production LED reads
+   its own state (productionOn && machineOn) — only On/Off is wired
+   straight to the switch. */
+.led-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Left container for LEDs */
+.leds-left {
+  display: flex;
+  gap: 28px; /* keeps spacing consistent between the two LEDs */
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.machine-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.machine-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.machine-row-header > :nth-child(2) {
+  margin-left: 115px;
+  margin-right: auto;
+}
+
+.machine-row-header > :last-child {
+  margin-left: auto;
+}
+
+.led-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.led {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: radial-gradient(circle at 35% 30%, #f87171, var(--danger));
+  box-shadow: 0 0 0 12px var(--danger-soft);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.led[data-on='true'] {
+  background: radial-gradient(circle at 35% 30%, #4ade80, var(--success));
+  box-shadow: 0 0 0 12px var(--success-glow);
+}
+
+
+/* ---- Timer ---- */
+.timer-live {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--danger);
+}
+
+/* ---- Order status pill ---- */
+.status-pill {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ---- Debug section ---- */
+.debug-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debug-actions {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.voice-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  animation: pulse-red 1.2s infinite;
+}
+
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.debug-actions .btn {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.debug-output {
+  background: var(--bg-muted);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.debug-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- Mobile layout ---- */
+@media (max-width: 480px) {
+  .page {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .card {
+    max-width: 100%;
+    min-height: 100vh;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    box-shadow: none;
+  }
+
+  .section {
+    padding: 8px 14px;
+  }
+
+  .app-header {
+    padding: 12px 14px 10px;
+  }
+
+  .app-title {
+    font-size: 0.95rem;
+  }
+
+  .eyebrow {
+    font-size: 10.5px;
+    margin: 0 0 2px;
+  }
+
+  .big-stat {
+    font-size: 20px;
+  }
+
+  .metrics-grid,
+  .cost-grid {
+    gap: 10px;
+  }
+
+  .metrics-row-spread {
+    gap: 12px;
+  }
+
+  .metric-label,
+  .field-label {
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+
+  .metric-value {
+    font-size: 16px;
+  }
+
+  /* Order form: let Set Qty drop below on very narrow screens instead
+     of squeezing */
+  .order-row {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  /* Date + Submit: stack vertically so the button never gets cramped */
+  .datetime-row {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .datetime-row .datetime {
+    flex: 1 1 100%;
+  }
+
+  .datetime-row .btn {
+    width: 100%;
+  }
+
+  .machine-row {
+    flex-wrap: wrap;
+    row-gap: 10px;
+    column-gap: 18px;
+  }
+
+  .machine-row-header {
+    gap: 8px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .machine-leds-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+    width: auto;
+    margin-left: auto;
+  }
+
+  .machine-leds-row > :first-child {
+    margin-left: 0;
+  }
+
+  .machine-leds-row > :last-child {
+    margin-left: 0;
+  }
+
+  .led-block {
+    gap: 6px;
+  }
+
+  .led-label {
+    font-size: 10px;
+  }
+
+  .led {
+    width: 46px;
+    height: 46px;
+    box-shadow: 0 0 0 10px var(--danger-soft);
+  }
+
+  .led[data-on='true'] {
+    box-shadow: 0 0 0 10px var(--success-glow);
+  }
+
+  /* Enlarge the toggle's actual hit area on touch screens without
+     changing how it looks, by adding invisible padding */
+  .switch {
+    width: 50px;
+    height: 30px;
+  }
+
+  .switch::after {
+    width: 24px;
+    height: 24px;
+  }
+
+  .switch[data-on='true']::after {
+    transform: translateX(20px);
+  }
+
+  .btn {
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+}
