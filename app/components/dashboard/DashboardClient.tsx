@@ -90,6 +90,7 @@ export default function DashboardClient() {
   const [activeTab, setActiveTab] = useState<"machine" | "robot" | "log">("machine");
   const [robotOn, setRobotOn] = useState(false);
   const [gripperPercent, setGripperPercent] = useState(40);
+  const [joints, setJoints] = useState<number[]>([0, 15, 180, 230, 0, 55, 90]);
   const [logFilter, setLogFilter] = useState<"all" | "info" | "warn" | "error">("all");
   const [logSearch, setLogSearch] = useState("");
   const [micActive, setMicActive] = useState(false);
@@ -396,25 +397,25 @@ export default function DashboardClient() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr 1fr", gap: 10, alignItems: "end" }}>
             <div>
               <Label className="micro-label" style={{ fontSize: 10, color: "var(--ink-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 6, display: "block" }}>Sl No.</Label>
-              <Input type="number" value={slNo} onChange={(e) => setSlNo(Number(e.target.value) || 1)} className="h-9 rounded-lg border px-3 text-sm mono-readout font-semibold" style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", color: "var(--ink)" }} />
+              <Input type="number" value={slNo} onChange={(e) => setSlNo(Number(e.target.value) || 1)} disabled={!machineOn} className="h-9 rounded-lg border px-3 text-sm mono-readout font-semibold disabled:opacity-50" style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", color: "var(--ink)" }} />
             </div>
             <div>
               <Label className="micro-label" style={{ fontSize: 10, color: "var(--ink-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 6, display: "block" }}>Item</Label>
-              <Select value={item} onValueChange={(v) => setItem(v)}>
-                <SelectTrigger className="h-9 rounded-lg border px-3 text-sm font-semibold" style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", color: "var(--ink)" }}><SelectValue /></SelectTrigger>
+              <Select value={item} onValueChange={(v) => setItem(v)} disabled={!machineOn}>
+                <SelectTrigger className="h-9 rounded-lg border px-3 text-sm font-semibold disabled:opacity-50" style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", color: "var(--ink)" }}><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="Solid_Plate">1 · Solid_Plate</SelectItem><SelectItem value="Hollow_Plate">2 · Hollow_Plate</SelectItem><SelectItem value="Bracket">3 · Bracket</SelectItem></SelectContent>
               </Select>
             </div>
             <div>
               <Label className="micro-label" style={{ fontSize: 10, color: "var(--ink-muted)", fontWeight: 600, letterSpacing: "0.06em", marginBottom: 6, display: "block" }}>Set Qty</Label>
-              <Input type="number" value={setQty} onChange={(e) => setSetQty(Number(e.target.value) || 0)} className="h-9 rounded-lg border px-3 text-sm mono-readout font-semibold" style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", color: "var(--ink)" }} />
+              <Input type="number" value={setQty} onChange={(e) => setSetQty(Number(e.target.value) || 0)} disabled={!machineOn} className="h-9 rounded-lg border px-3 text-sm mono-readout font-semibold disabled:opacity-50" style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", color: "var(--ink)" }} />
             </div>
           </div>
           <div style={{ marginTop: 12 }}>
             <Label className="micro-label" style={{ fontSize: 11, color: "var(--ink-muted)", fontWeight: 400, textTransform: "none", letterSpacing: "0", marginBottom: 4, display: "block" }}>Select Date and Time (IST)</Label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "end" }}>
-              <DateTimePicker value={dateTime} onChange={setDateTime} />
-              <Button onClick={handleSubmit} className="h-8 rounded-md px-5 text-xs font-semibold" style={{ background: "#3b82f6", color: "white", borderRadius: 6 }}>Submit</Button>
+              <DateTimePicker value={dateTime} onChange={setDateTime} disabled={!machineOn} />
+              <Button onClick={handleSubmit} disabled={!machineOn} className="h-8 rounded-md px-5 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed" style={{ background: "#3b82f6", color: "white", borderRadius: 6 }}>Submit</Button>
             </div>
           </div>
         </div>
@@ -423,7 +424,7 @@ export default function DashboardClient() {
         <div className="instrument" style={{ margin: "10px 0 0", borderRadius: 12, background: "var(--panel)", border: "1.5px solid var(--hairline)", boxShadow: "0 1px 0 rgba(255,255,255,0.03), 0 4px 16px rgba(0,0,0,0.18)", overflow: "hidden", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div className="flex items-center gap-3">
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.02em" }}>Place Order</span>
-            <Switch checked={placeOrder} onCheckedChange={(v) => { setPlaceOrder(v); sendNodeRedMessage(NODE_RED_WS_PATHS.placeOrder, { device: "placeOrder", value: v }); }} className="data-[state=checked]:bg-[#3b82f6]" aria-label="Place order" />
+            <Switch checked={placeOrder} onCheckedChange={(v) => { setPlaceOrder(v); sendNodeRedMessage(NODE_RED_WS_PATHS.placeOrder, { device: "placeOrder", value: v }); }} disabled={!machineOn} className="data-[state=checked]:bg-[#3b82f6] disabled:opacity-50" aria-label="Place order" />
           </div>
           <div className="text-right" style={{ minWidth: 110 }}>
             <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", textAlign: "right" }}>Status</p>
@@ -435,9 +436,9 @@ export default function DashboardClient() {
         <div className="instrument" style={{ margin: "10px 0 0", borderRadius: 12, background: "var(--panel)", border: "1px solid var(--hairline)", boxShadow: "0 1px 0 rgba(255,255,255,0.03), 0 4px 16px rgba(0,0,0,0.18)", overflow: "hidden", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div className="flex items-center gap-3">
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.01em" }}>Stop</span>
-            <Switch checked={stop} onCheckedChange={(v) => { setStop(v); sendNodeRedMessage(NODE_RED_WS_PATHS.stop, { device: "stop", value: v }); }} className="data-[state=checked]:bg-[#ef4444]" aria-label="Stop" />
+            <Switch checked={stop} onCheckedChange={(v) => { setStop(v); sendNodeRedMessage(NODE_RED_WS_PATHS.stop, { device: "stop", value: v }); }} disabled={!machineOn} className="data-[state=checked]:bg-[#ef4444] disabled:opacity-50" aria-label="Stop" />
           </div>
-          <Button onClick={handleReset} className="h-10 px-8 rounded-lg text-sm font-bold" style={{ background: "#22c55e", color: "white", borderRadius: 10, minWidth: 92, border: "1px solid #16a34a", boxShadow: "none" }}>Reset</Button>
+          <Button onClick={handleReset} disabled={!machineOn} className="h-10 px-8 rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed" style={{ background: "#22c55e", color: "white", borderRadius: 10, minWidth: 92, border: "1px solid #16a34a", boxShadow: "none" }}>Reset</Button>
         </div>
 
         {}
@@ -503,7 +504,7 @@ export default function DashboardClient() {
 
             {}
             <div className="instrument" style={{ margin: "10px 0 0", borderRadius: 12, background: "var(--panel)", border: "1px solid var(--hairline)", padding: "14px 16px" }}>
-              <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", marginBottom: 8 }}>Control of Creeper</p>
+              <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", marginBottom: 8 }}>Control of Gripper</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
                 <div>
                   <p style={{ fontSize: 11, color: "var(--ink-muted)", marginBottom: 4 }}>Gripper Position</p>
@@ -518,10 +519,10 @@ export default function DashboardClient() {
 
             {}
             <div className="instrument" style={{ margin: "10px 0 16px", borderRadius: 12, background: "var(--panel)", border: "1px solid var(--hairline)", padding: "14px 16px" }}>
-              <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", marginBottom: 10 }}>Panel Control of Creeper</p>
+              <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", marginBottom: 10 }}>Panel Control of Gripper</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                 <Button
-                  onClick={() => { if (!robotOn) return; setGripperPercent(100); setGripperAction("open"); sendNodeRedMessage(NODE_RED_WS_PATHS.gripper, { device: "gripper", value: { action: "open", percent: 100 } }); setLogs((l) => [{ id: Date.now(), time: new Date().toLocaleTimeString("en-IN", { hour12: true }), level: "info", msg: "Gripper OPEN 100%", meta: "creeper" }, ...l].slice(0, 50)); }}
+                  onClick={() => { if (!robotOn) return; setGripperPercent(100); setGripperAction("open"); sendNodeRedMessage(NODE_RED_WS_PATHS.gripper, { device: "gripper", value: { action: "open", percent: 100 } }); setLogs((l) => [{ id: Date.now(), time: new Date().toLocaleTimeString("en-IN", { hour12: true }), level: "info", msg: "Gripper OPEN 100%", meta: "gripper" }, ...l].slice(0, 50)); }}
                   disabled={!robotOn}
                   className="h-10 rounded-lg text-xs font-bold"
                   style={{ background: gripperAction === "open" ? "#22c55e" : "var(--module)", color: gripperAction === "open" ? "white" : "var(--ink)", border: `1px solid ${gripperAction === "open" ? "#16a34a" : "var(--hairline)"}` }}
@@ -529,7 +530,7 @@ export default function DashboardClient() {
                   Open
                 </Button>
                 <Button
-                  onClick={() => { if (!robotOn) return; setGripperPercent(0); setGripperAction("close"); sendNodeRedMessage(NODE_RED_WS_PATHS.gripper, { device: "gripper", value: { action: "close", percent: 0 } }); setLogs((l) => [{ id: Date.now(), time: new Date().toLocaleTimeString("en-IN", { hour12: true }), level: "warn", msg: "Gripper CLOSE 0%", meta: "creeper" }, ...l].slice(0, 50)); }}
+                  onClick={() => { if (!robotOn) return; setGripperPercent(0); setGripperAction("close"); sendNodeRedMessage(NODE_RED_WS_PATHS.gripper, { device: "gripper", value: { action: "close", percent: 0 } }); setLogs((l) => [{ id: Date.now(), time: new Date().toLocaleTimeString("en-IN", { hour12: true }), level: "warn", msg: "Gripper CLOSE 0%", meta: "gripper" }, ...l].slice(0, 50)); }}
                   disabled={!robotOn}
                   className="h-10 rounded-lg text-xs font-bold"
                   style={{ background: gripperAction === "close" ? "#ef4444" : "var(--module)", color: gripperAction === "close" ? "white" : "var(--ink)", border: `1px solid ${gripperAction === "close" ? "#dc2626" : "var(--hairline)"}` }}
@@ -541,7 +542,53 @@ export default function DashboardClient() {
                   <span className="mono-readout" style={{ fontSize: 14, fontWeight: 800, color: robotOn ? "#22c55e" : "var(--ink-faint)" }}>{gripperPercent}%</span>
                 </div>
               </div>
-              <p className="micro-label" style={{ marginTop: 8, fontSize: 9, textAlign: "center", color: "var(--ink-subtle)" }}>{robotOn ? `Panel • ${gripperAction === "idle" ? "Ready" : gripperAction.toUpperCase()} • ${gripperPercent}%` : "Robot OFF — enable to control"}</p>
+            </div>
+            <div className="instrument" style={{ margin: "6px 0 0", borderRadius: 12, background: "var(--panel)", border: "1px solid var(--hairline)", padding: "14px 16px" }}>
+              <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", marginBottom: 10 }}>Robot Position</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Home", preset: "home", joints: [0, 15, 180, 230, 0, 55, 90] },
+                  { label: "Zero", preset: "zero", joints: [0, 0, 0, 0, 0, 0, 0] },
+                  { label: "Vertical", preset: "vertical", joints: [0, 0, 180, 0, 0, 0, 0] },
+                  { label: "Retract", preset: "retract", joints: [0, 30, 180, 200, 0, 40, 90] },
+                ].map((b) => (
+                  <Button
+                    key={b.preset}
+                    onClick={() => {
+                      if (!robotOn) return;
+                      setJoints(b.joints);
+                      sendNodeRedMessage(NODE_RED_WS_PATHS.joints, { device: "joints", preset: b.preset, joints: b.joints });
+                      setLogs((l) => [{ id: Date.now(), time: new Date().toLocaleTimeString("en-IN", { hour12: true }), level: "info", msg: `Robot → ${b.label}`, meta: `joints ${b.preset}` }, ...l].slice(0, 50));
+                    }}
+                    disabled={!robotOn}
+                    className="h-10 rounded-lg text-xs font-bold"
+                    style={{ background: "var(--module)", color: "var(--ink)", border: "1px solid var(--hairline)", opacity: robotOn ? 1 : 0.5 }}
+                  >
+                    {b.label}
+                  </Button>
+                ))}
+              </div>
+
+            </div>
+            <div className="instrument" style={{ margin: "10px 0 0", borderRadius: 12, background: "var(--panel)", border: "1px solid var(--hairline)", padding: "14px 16px" }}>
+              <p className="micro-label" style={{ fontSize: 10, letterSpacing: "0.08em", marginBottom: 10 }}>Control Joints</p>
+              <div style={{ maxHeight: 220, overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column", gap: 10 }}>
+                {joints.map((val, idx) => (
+                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "36px 1fr 48px", gap: 10, alignItems: "center" }}>
+                    <span className="mono-readout" style={{ fontSize: 11, fontWeight: 700, color: robotOn ? "var(--ink)" : "var(--ink-faint)" }}>J{idx}</span>
+                    <input type="range" min={0} max={360} value={val} disabled={!robotOn} onChange={(e) => { const v = Number(e.target.value); const next = [...joints]; next[idx] = v; setJoints(next); }} onMouseUp={() => { if (!robotOn) return; sendNodeRedMessage(NODE_RED_WS_PATHS.joints, { device: "joints", joints }); }} onTouchEnd={() => { if (!robotOn) return; sendNodeRedMessage(NODE_RED_WS_PATHS.joints, { device: "joints", joints }); }} style={{ accentColor: robotOn ? "#22c55e" : "#3a3e45", opacity: robotOn ? 1 : 0.5 }} />
+                    <span className="mono-readout" style={{ fontSize: 11, fontWeight: 700, textAlign: "right", color: robotOn ? "var(--ink)" : "var(--ink-faint)" }}>{Math.round(val)}°</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <Button disabled={!robotOn} onClick={() => sendNodeRedMessage(NODE_RED_WS_PATHS.joints, { device: "joints", joints })} className="flex-1 h-9 rounded-lg text-xs font-bold" style={{ background: robotOn ? "#22c55e" : "var(--module)", color: robotOn ? "white" : "var(--ink-faint)", border: "1px solid var(--hairline)", opacity: robotOn ? 1 : 0.5 }}>
+                  Send Joints
+                </Button>
+                <Button disabled={!robotOn} onClick={() => { const r = [...joints]; r.fill(0); setJoints(r); sendNodeRedMessage(NODE_RED_WS_PATHS.joints, { device: "joints", joints: r }); }} variant="outline" className="h-9 rounded-lg text-xs font-bold" style={{ background: "transparent", borderColor: "var(--hairline)" }}>
+                  Reset
+                </Button>
+              </div>
             </div>
           </>
         )}

@@ -50,6 +50,37 @@ turbo
 # Vercel
 .vercel
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+.ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+.eggs/
+*.egg
+*.whl
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.dmypy.json
+dmypy.json
+.pytype/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hatch/
+.ruff_cache/
+uv.lock
+
 # Misc
 .cache
 .parcel-cache

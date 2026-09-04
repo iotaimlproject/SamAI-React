@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Calendar, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type Props = { value: string; onChange: (_v: string) => void };
+type Props = { value: string; onChange: (_v: string) => void; disabled?: boolean };
 
 function parseIST(v: string): Date {
 
@@ -31,7 +31,7 @@ function formatIST(d: Date): string {
   return `${dd}-${mm}-${yyyy} ${hh}:${min} ${ap}`;
 }
 
-export function DateTimePicker({ value, onChange }: Props) {
+export function DateTimePicker({ value, onChange, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const initial = useMemo(() => parseIST(value), [value]);
   const [view, setView] = useState<Date>(initial);
@@ -65,9 +65,10 @@ export function DateTimePicker({ value, onChange }: Props) {
     <div className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-lg border px-3 text-sm cursor-pointer"
-        style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", height: 36, color: "var(--ink)" }}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled}
+        className="flex w-full items-center justify-between rounded-lg border px-3 text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{ background: "var(--module)", borderColor: "var(--hairline-strong)", height: 36, color: "var(--ink)", opacity: disabled ? 0.5 : 1 }}
         aria-label="Pick date and time"
       >
         <span className="flex items-center gap-2" style={{ color: "var(--ink)", fontSize: 13, fontWeight: 600 }}>
