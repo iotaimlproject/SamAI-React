@@ -1,3 +1,28 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Next.js build
+.next
+out
+dist
+dist-ssr
+build
+
+# Production
+coverage
+.nyc_output
+*.tsbuildinfo
+.next/cache
+.next/types
+
+# Env
+.env
+.env.*
+!.env.example
+*.local
+
 # Logs
 logs
 *.log
@@ -6,21 +31,25 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+turbo
 
-node_modules
-dist
-dist-ssr
-.env
-.env.*
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.code-workspace
+
+# Vercel
+.vercel
+
+# Misc
+.cache
+.parcel-cache
