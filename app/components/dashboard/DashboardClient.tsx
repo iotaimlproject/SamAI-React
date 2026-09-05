@@ -14,12 +14,21 @@ import { handleSpeakResponse } from "@/lib/voiceService";
 import { useVoiceCapture } from "@/hooks/useVoiceCapture";
 import { NODE_RED_WS_PATHS, closeNodeRedSocket, getNodeRedSocket, sendNodeRedMessage } from "@/lib/nodeRedWebSocket";
 
-function Gauge({ value, accent = "var(--cyan)", size = 84, highlight = false }: { value: number; accent?: string; size?: number; highlight?: boolean }) {
+function getGaugeColor(v: number): string {
+  if (v >= 100) return "#22c55e";
+  if (v >= 80) return "#00d5ff";
+  if (v >= 60) return "#eab308";
+  if (v >= 30) return "#f97316";
+  return "#ef4444";
+}
+
+function Gauge({ value, accent, size = 84, highlight = false }: { value: number; accent?: string; size?: number; highlight?: boolean }) {
   const dim = size;
   const r = size === 84 ? 32 : size > 84 ? 34 : 28;
   const c = 2 * Math.PI * r;
   const cx = dim / 2;
   const pct = Math.max(0, Math.min(100, value));
+  const color = accent ?? getGaugeColor(value);
   const dash = (pct / 100) * c;
   return (
     <div style={{ position: "relative", width: dim, height: dim, flexShrink: 0, transform: highlight ? "scale(1.06)" : undefined, filter: highlight ? "drop-shadow(0 0 10px rgba(34,197,94,0.22))" : undefined }}>
@@ -33,7 +42,7 @@ function Gauge({ value, accent = "var(--cyan)", size = 84, highlight = false }: 
           const y2 = cx + (r + 4) * Math.sin(a);
           return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--ink-faint)" strokeWidth={i % 3 === 0 ? 0.9 : 0.5} opacity={i % 3 === 0 ? 0.9 : 0.35} />;
         })}
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke={accent} strokeWidth={highlight ? 2.2 : 1.6} strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`} style={{ opacity: 0.95 }} />
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={color} strokeWidth={highlight ? 2.2 : 1.6} strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`} style={{ opacity: 0.95 }} />
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <span className="mono-readout" style={{ fontSize: highlight ? 18 : 16, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.04em" }}>{Math.round(pct)}</span>
@@ -77,12 +86,12 @@ export default function DashboardClient() {
   const [rmQty, setRmQty] = useState(1);
   const [produced, setProduced] = useState(3);
 
-  const [_productionOn] = useState(true);
+  const [productionOn, setProductionOn] = useState(true);
 
   const [plannedAt, setPlannedAt] = useState<Date | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const [stop, setStop] = useState(false);
-  const [perPartRs] = useState(2000);
+  const [perPartRs, setPerPartRs] = useState(2000);
   const [_plannedRs] = useState(6000);
   const [badParts, setBadParts] = useState(0);
   const [_loss, _setLoss] = useState(0);
@@ -134,7 +143,23 @@ export default function DashboardClient() {
   useEffect(() => {
     getNodeRedSocket(NODE_RED_WS_PATHS.machine, {
       onopen: () => console.log("[App] /ws/machine connected"),
-      onmessage: (e) => { try { const p = JSON.parse(e.data); if (p.device === "machine") setMachineOn(Boolean(p.value)); } catch { void 0; } },
+      onmessage: (e) => {
+        try {
+          const p = JSON.parse(e.data);
+          if (p.device !== "machine") return;
+          const v = (p.value ?? p.payload ?? p) as Record<string, unknown> | boolean;
+          if (v !== null && typeof v === "object") {
+            if (typeof v.power === "boolean") setMachineOn(v.power);
+            if (typeof v.production === "boolean") setProductionOn(v.production);
+            return;
+          }
+          if (p.target === "production") {
+            setProductionOn(Boolean(p.value));
+            return;
+          }
+          setMachineOn(Boolean(p.value));
+        } catch { void 0; }
+      },
     });
     return () => closeNodeRedSocket(NODE_RED_WS_PATHS.machine);
   }, []);
@@ -212,6 +237,8 @@ export default function DashboardClient() {
             if (typeof t.rmQty === "number") setRmQty(t.rmQty);
             if (typeof t.rawMaterial === "number") setRmQty(t.rawMaterial);
             if (typeof t.badParts === "number") setBadParts(t.badParts);
+            if (typeof t.perPart === "number") setPerPartRs(t.perPart);
+            if (typeof t.perPartRs === "number") setPerPartRs(t.perPartRs);
             if (typeof t.loss === "number") _setLoss(t.loss);
           }
         } catch {}
@@ -349,14 +376,14 @@ export default function DashboardClient() {
               <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", color: "var(--ink)", textTransform: "uppercase" }}>Machine</span>
               <Switch
                 checked={machineOn}
-                onCheckedChange={(v) => { setMachineOn(v); sendNodeRedMessage(NODE_RED_WS_PATHS.machine, { device: "machine", value: v }); }}
+                onCheckedChange={(v) => { setMachineOn(v); sendNodeRedMessage(NODE_RED_WS_PATHS.machine, { device: "machine", value: { power: v } }); }}
                 aria-label="Machine"
                 className="data-[state=checked]:bg-[#22c55e]"
               />
             </div>
             <div className="flex items-center gap-5">
               <Led label="ON/OFF" on={machineOn} variant="default" size="lg" />
-              <Led label="PRODUCTION" on={machineOn} variant={machineOn && stop ? "danger" : "default"} size="lg" />
+              <Led label="PRODUCTION" on={machineOn && (stop || productionOn)} variant={machineOn && stop ? "danger" : "default"} size="lg" />
             </div>
           </div>
           <div style={{ padding: "0 16px 12px", borderTop: "1px solid var(--hairline)", marginTop: 2 }}>
@@ -374,19 +401,19 @@ export default function DashboardClient() {
         <div className="instrument" style={{ margin: "10px 0 0", borderRadius: 12, background: "var(--panel)", border: "1px solid var(--hairline)", boxShadow: "0 1px 0 rgba(255,255,255,0.03), 0 4px 16px rgba(0,0,0,0.18)", overflow: "hidden", padding: "14px 12px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, alignItems: "end" }}>
             <div className="flex flex-col items-center gap-1.5">
-              <Gauge value={availability} accent="#22c55e" size={76} />
+              <Gauge value={availability} accent={getGaugeColor(availability)} size={76} />
               <p className="micro-label" style={{ fontSize: 11, color: "var(--ink-muted)", fontWeight: 400, textTransform: "none", letterSpacing: "0" }}>Availability</p>
             </div>
             <div className="flex flex-col items-center gap-1.5">
-              <Gauge value={performance} accent="var(--cyan)" size={76} />
+              <Gauge value={performance} accent={getGaugeColor(performance)} size={76} />
               <p className="micro-label" style={{ fontSize: 11, color: "var(--ink-muted)", fontWeight: 400, textTransform: "none", letterSpacing: "0" }}>Performance</p>
             </div>
             <div className="flex flex-col items-center gap-1.5">
-              <Gauge value={quality} accent="#22c55e" size={76} />
+              <Gauge value={quality} accent={getGaugeColor(quality)} size={76} />
               <p className="micro-label" style={{ fontSize: 11, color: "var(--ink-muted)", fontWeight: 400, textTransform: "none", letterSpacing: "0" }}>Quality</p>
             </div>
             <div className="flex flex-col items-center gap-1.5">
-              <Gauge value={oee} accent={oee > 80 ? "#22c55e" : oee > 60 ? "#f59e0b" : "#ef4444"} size={92} highlight />
+              <Gauge value={oee} accent={getGaugeColor(oee)} size={92} highlight />
               <p className="micro-label" style={{ fontSize: 11, color: "var(--ink)", fontWeight: 700, textTransform: "none", letterSpacing: "0" }}>OEE</p>
             </div>
           </div>
